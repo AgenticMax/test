@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOE大模型集群训练数据流向可视化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            color: #333;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1.2em;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            width: 350px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            height: fit-content;
+        }
+
+        .control-panel h3 {
+            color: #4a5568;
+            margin-bottom: 20px;
+            font-size: 1.4em;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .control-group button {
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .control-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(66, 153, 225, 0.4);
+        }
+
+        .control-group button:active {
+            transform: translateY(0);
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        .animation-container {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cluster-visualization {
+            width: 100%;
+            height: 500px;
+            position: relative;
+            background: linear-gradient(145deg, #f8fafc, #e2e8f0);
+            border-radius: 12px;
+            border: 2px solid #cbd5e0;
+        }
+
+        .node {
+            position: absolute;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .node:hover {
+            transform: scale(1.1);
+            z-index: 10;
+        }
+
+        .input-node {
+            width: 80px;
+            height: 60px;
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            top: 50px;
+            left: 50px;
+        }
+
+        .router-node {
+            width: 100px;
+            height: 80px;
+            background: linear-gradient(135deg, #ed8936, #dd6b20);
+            top: 150px;
+            left: 250px;
+        }
+
+        .expert-node {
+            width: 90px;
+            height: 70px;
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+        }
+
+        .aggregator-node {
+            width: 100px;
+            height: 80px;
+            background: linear-gradient(135deg, #9f7aea, #805ad5);
+            top: 350px;
+            left: 250px;
+        }
+
+        .output-node {
+            width: 80px;
+            height: 60px;
+            background: linear-gradient(135deg, #f56565, #e53e3e);
+            top: 420px;
+            left: 50px;
+        }
+
+        .data-flow {
+            position: absolute;
+            background: linear-gradient(90deg, #4299e1, #63b3ed);
+            height: 4px;
+            border-radius: 2px;
+            opacity: 0;
+            box-shadow: 0 0 10px rgba(66, 153, 225, 0.6);
+        }
+
+        .data-flow.active {
+            animation: dataFlow 2s ease-in-out forwards;
+        }
+
+        @keyframes dataFlow {
+            0% {
+                opacity: 1;
+                transform: scaleX(0);
+            }
+            50% {
+                opacity: 1;
+                transform: scaleX(1);
+            }
+            100% {
+                opacity: 0.3;
+                transform: scaleX(1);
+            }
+        }
+
+        .data-packet {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #4299e1, #2b6cb0);
+            border-radius: 50%;
+            opacity: 0;
+            box-shadow: 0 0 15px rgba(66, 153, 225, 0.8);
+        }
+
+        .data-packet.moving {
+            animation: movePacket 2s ease-in-out forwards;
+        }
+
+        @keyframes movePacket {
+            0% {
+                opacity: 1;
+                transform: scale(0.5);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+        }
+
+        .explanation-panel {
+            margin-top: 30px;
+            background: rgba(240, 249, 255, 0.9);
+            border-radius: 12px;
+            padding: 25px;
+            border-left: 5px solid #4299e1;
+        }
+
+        .explanation-panel h4 {
+            color: #2d3748;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .explanation-panel p {
+            color: #4a5568;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+
+        .step-indicator {
+            background: #4299e1;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .expert-grid {
+            position: absolute;
+            top: 100px;
+            right: 100px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .metrics-display {
+            background: rgba(248, 250, 252, 0.9);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .metrics-display h5 {
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            color: #4a5568;
+        }
+
+        .loading-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+        }
+
+        .loading-indicator.active {
+            opacity: 1;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 MOE大模型集群训练可视化</h1>
+        <p>Mixture of Experts 分布式训练数据流向动画演示</p>
+    </div>
+
+    <div class="main-container">
+        <div class="control-panel">
+            <h3>🎮 控制面板</h3>
+            
+            <div class="control-group">
+                <label>动画控制</label>
+                <button onclick="startAnimation()">▶️ 开始训练</button>
+                <button onclick="pauseAnimation()">⏸️ 暂停</button>
+                <button onclick="resetAnimation()">🔄 重置</button>
+            </div>
+
+            <div class="control-group">
+                <label>训练阶段</label>
+                <button onclick="showStep(1)">1. 数据分发</button>
+                <button onclick="showStep(2)">2. 路由决策</button>
+                <button onclick="showStep(3)">3. 专家处理</button>
+                <button onclick="showStep(4)">4. 结果聚合</button>
+            </div>
+
+            <div class="control-group">
+                <label>专家数量: <span id="expertCount">4</span></label>
+                <input type="range" id="expertSlider" min="2" max="8" value="4" onchange="updateExperts(this.value)">
+            </div>
+
+            <div class="control-group">
+                <label>动画速度: <span id="speedValue">1x</span></label>
+                <input type="range" id="speedSlider" min="0.5" max="3" step="0.1" value="1" onchange="updateSpeed(this.value)">
+            </div>
+
+            <div class="metrics-display">
+                <h5>📊 训练指标</h5>
+                <div class="metric-item">
+                    <span>当前批次:</span>
+                    <span id="currentBatch">0</span>
+                </div>
+                <div class="metric-item">
+                    <span>激活专家:</span>
+                    <span id="activeExperts">0/4</span>
+                </div>
+                <div class="metric-item">
+                    <span>计算负载:</span>
+                    <span id="computeLoad">0%</span>
+                </div>
+                <div class="metric-item">
+                    <span>通信开销:</span>
+                    <span id="commOverhead">0ms</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="animation-container">
+            <div class="cluster-visualization" id="clusterViz">
+                <!-- 输入节点 -->
+                <div class="node input-node" title="输入数据">
+                    📥<br>Input<br>Data
+                    <div class="loading-indicator" id="inputLoader">⚡</div>
+                </div>
+
+                <!-- 路由器节点 -->
+                <div class="node router-node" title="门控网络/路由器">
+                    🧭<br>Router<br>Gateway
+                    <div class="loading-indicator" id="routerLoader">⚡</div>
+                </div>
+
+                <!-- 专家节点网格 -->
+                <div class="expert-grid" id="expertGrid">
+                    <!-- 专家节点将通过JavaScript动态生成 -->
+                </div>
+
+                <!-- 聚合器节点 -->
+                <div class="node aggregator-node" title="结果聚合器">
+                    🔗<br>Aggregator<br>Combine
+                    <div class="loading-indicator" id="aggLoader">⚡</div>
+                </div>
+
+                <!-- 输出节点 -->
+                <div class="node output-node" title="输出结果">
+                    📤<br>Output<br>Result
+                    <div class="loading-indicator" id="outputLoader">⚡</div>
+                </div>
+            </div>
+
+            <div class="explanation-panel" id="explanationPanel">
+                <div class="step-indicator" id="stepIndicator">等待开始</div>
+                <h4 id="explanationTitle">MOE训练原理介绍</h4>
+                <p id="explanationText">
+                    Mixture of Experts (MOE) 是一种用于扩展深度学习模型的架构，通过将模型分解为多个专门的"专家"网络来提高效率。
+                    在分布式训练中，不同的专家可以部署在不同的GPU或节点上，实现并行计算。
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let animationState = {
+            isRunning: false,
+            isPaused: false,
+            currentStep: 0,
+            speed: 1,
+            expertCount: 4,
+            currentBatch: 0
+        };
+
+        let animationIntervals = [];
+        let currentStepTimeout = null;
+
+        // 初始化专家节点
+        function initializeExperts() {
+            const expertGrid = document.getElementById('expertGrid');
+            expertGrid.innerHTML = '';
+            
+            const positions = [
+                {top: 0, left: 0},
+                {top: 0, left: 110},
+                {top: 90, left: 0},
+                {top: 90, left: 110},
+                {top: 180, left: 0},
+                {top: 180, left: 110},
+                {top: 270, left: 0},
+                {top: 270, left: 110}
+            ];
+
+            for (let i = 0; i < animationState.expertCount; i++) {
+                const expert = document.createElement('div');
+                expert.className = 'node expert-node';
+                expert.id = `expert-${i}`;
+                expert.style.position = 'absolute';
+                expert.style.top = positions[i].top + 'px';
+                expert.style.left = positions[i].left + 'px';
+                expert.title = `专家 ${i + 1}`;
+                expert.innerHTML = `
+                    🔬<br>Expert<br>${i + 1}
+                    <div class="loading-indicator" id="expertLoader-${i}">⚡</div>
+                `;
+                expertGrid.appendChild(expert);
+            }
+            
+            updateActiveExperts();
+        }
+
+        // 更新专家数量
+        function updateExperts(count) {
+            animationState.expertCount = parseInt(count);
+            document.getElementById('expertCount').textContent = count;
+            initializeExperts();
+        }
+
+        // 更新动画速度
+        function updateSpeed(speed) {
+            animationState.speed = parseFloat(speed);
+            document.getElementById('speedValue').textContent = speed + 'x';
+        }
+
+        // 开始动画
+        function startAnimation() {
+            if (animationState.isPaused) {
+                animationState.isPaused = false;
+                resumeCurrentStep();
+                return;
+            }
+
+            animationState.isRunning = true;
+            animationState.currentStep = 0;
+            animationState.currentBatch++;
+            
+            updateMetrics();
+            runTrainingCycle();
+        }
+
+        // 暂停动画
+        function pauseAnimation() {
+            animationState.isPaused = true;
+            clearAllIntervals();
+        }
+
+        // 重置动画
+        function resetAnimation() {
+            animationState.isRunning = false;
+            animationState.isPaused = false;
+            animationState.currentStep = 0;
+            animationState.currentBatch = 0;
+            
+            clearAllIntervals();
+            clearAllAnimations();
+            updateMetrics();
+            updateExplanation('等待开始', 'MOE训练原理介绍', 
+                'Mixture of Experts (MOE) 是一种用于扩展深度学习模型的架构，通过将模型分解为多个专门的"专家"网络来提高效率。在分布式训练中，不同的专家可以部署在不同的GPU或节点上，实现并行计算。');
+        }
+
+        // 显示特定步骤
+        function showStep(step) {
+            clearAllIntervals();
+            clearAllAnimations();
+            animationState.currentStep = step;
+            
+            switch(step) {
+                case 1:
+                    showDataDistribution();
+                    break;
+                case 2:
+                    showRoutingDecision();
+                    break;
+                case 3:
+                    showExpertProcessing();
+                    break;
+                case 4:
+                    showResultAggregation();
+                    break;
+            }
+        }
+
+        // 运行完整训练周期
+        function runTrainingCycle() {
+            if (!animationState.isRunning || animationState.isPaused) return;
+
+            const stepDuration = 3000 / animationState.speed;
+            
+            showDataDistribution();
+            
+            currentStepTimeout = setTimeout(() => {
+                if (!animationState.isRunning || animationState.isPaused) return;
+                showRoutingDecision();
+                
+                currentStepTimeout = setTimeout(() => {
+                    if (!animationState.isRunning || animationState.isPaused) return;
+                    showExpertProcessing();
+                    
+                    currentStepTimeout = setTimeout(() => {
+                        if (!animationState.isRunning || animationState.isPaused) return;
+                        showResultAggregation();
+                        
+                        currentStepTimeout = setTimeout(() => {
+                            if (animationState.isRunning && !animationState.isPaused) {
+                                animationState.currentBatch++;
+                                updateMetrics();
+                                runTrainingCycle();
+                            }
+                        }, stepDuration);
+                    }, stepDuration);
+                }, stepDuration);
+            }, stepDuration);
+        }
+
+        // 步骤1：数据分发
+        function showDataDistribution() {
+            animationState.currentStep = 1;
+            updateExplanation('步骤 1: 数据分发', '输入数据预处理与分发', 
+                '训练数据首先被送入MOE模型的输入层。在分布式环境中，数据会被分批处理，每个batch包含多个样本。这些数据将传递给门控网络（Gating Network）进行路由决策。');
+            
+            activateLoader('inputLoader');
+            
+            setTimeout(() => {
+                deactivateLoader('inputLoader');
+                createDataFlow('input-node', 'router-node');
+            }, 1000 / animationState.speed);
+        }
+
+        // 步骤2：路由决策
+        function showRoutingDecision() {
+            animationState.currentStep = 2;
+            updateExplanation('步骤 2: 路由决策', '门控网络智能路由', 
+                '门控网络（Router/Gateway）分析输入数据的特征，决定哪些专家应该处理这些数据。每个输入token都会被分配到最适合的专家，这个过程是可学习的，网络会根据训练过程不断优化路由策略。');
+            
+            activateLoader('routerLoader');
+            
+            // 随机激活一些专家
+            const activeExpertIndices = [];
+            const numActiveExperts = Math.min(Math.ceil(animationState.expertCount * 0.6), animationState.expertCount);
+            
+            while (activeExpertIndices.length < numActiveExperts) {
+                const randomIndex = Math.floor(Math.random() * animationState.expertCount);
+                if (!activeExpertIndices.includes(randomIndex)) {
+                    activeExpertIndices.push(randomIndex);
+                }
+            }
+            
+            setTimeout(() => {
+                deactivateLoader('routerLoader');
+                activeExpertIndices.forEach((expertIndex, i) => {
+                    setTimeout(() => {
+                        createDataFlowToExpert('router-node', `expert-${expertIndex}`);
+                        highlightExpert(expertIndex);
+                    }, i * 200 / animationState.speed);
+                });
+            }, 1000 / animationState.speed);
+            
+            updateActiveExperts(activeExpertIndices.length);
+        }
+
+        // 步骤3：专家处理
+        function showExpertProcessing() {
+            animationState.currentStep = 3;
+            updateExplanation('步骤 3: 专家并行处理', '分布式专家计算', 
+                '被激活的专家网络并行处理分配给它们的数据。每个专家都是一个独立的神经网络，专门处理特定类型的输入。在集群环境中，不同的专家可能运行在不同的GPU或节点上，实现真正的并行计算。');
+            
+            // 激活所有正在处理的专家的加载指示器
+            for (let i = 0; i < animationState.expertCount; i++) {
+                const expert = document.getElementById(`expert-${i}`);
+                if (expert && expert.classList.contains('active')) {
+                    activateLoader(`expertLoader-${i}`);
+                }
+            }
+            
+            setTimeout(() => {
+                // 停用专家加载指示器
+                for (let i = 0; i < animationState.expertCount; i++) {
+                    deactivateLoader(`expertLoader-${i}`);
+                }
+            }, 2000 / animationState.speed);
+        }
+
+        // 步骤4：结果聚合
+        function showResultAggregation() {
+            animationState.currentStep = 4;
+            updateExplanation('步骤 4: 结果聚合', '加权组合专家输出', 
+                '所有激活专家的输出结果被收集并发送到聚合器。聚合器根据门控网络提供的权重，将不同专家的输出进行加权组合，生成最终的模型输出。这个过程涉及跨节点的通信和数据同步。');
+            
+            // 从激活的专家发送数据到聚合器
+            setTimeout(() => {
+                for (let i = 0; i < animationState.expertCount; i++) {
+                    const expert = document.getElementById(`expert-${i}`);
+                    if (expert && expert.classList.contains('active')) {
+                        createDataFlowFromExpert(`expert-${i}`, 'aggregator-node');
+                        unhighlightExpert(i);
+                    }
+                }
+                
+                activateLoader('aggLoader');
+            }, 500 / animationState.speed);
+            
+            setTimeout(() => {
+                deactivateLoader('aggLoader');
+                createDataFlow('aggregator-node', 'output-node');
+                activateLoader('outputLoader');
+            }, 1500 / animationState.speed);
+            
+            setTimeout(() => {
+                deactivateLoader('outputLoader');
+            }, 2000 / animationState.speed);
+        }
+
+        // 辅助函数
+        function activateLoader(loaderId) {
+            const loader = document.getElementById(loaderId);
+            if (loader) {
+                loader.classList.add('active');
+            }
+        }
+
+        function deactivateLoader(loaderId) {
+            const loader = document.getElementById(loaderId);
+            if (loader) {
+                loader.classList.remove('active');
+            }
+        }
+
+        function createDataFlow(fromNodeClass, toNodeClass) {
+            const fromNode = document.querySelector(`.${fromNodeClass}`) || document.getElementById(fromNodeClass);
+            const toNode = document.querySelector(`.${toNodeClass}`) || document.getElementById(toNodeClass);
+            
+            if (!fromNode || !toNode) return;
+            
+            const fromRect = fromNode.getBoundingClientRect();
+            const toRect = toNode.getBoundingClientRect();
+            const containerRect = document.getElementById('clusterViz').getBoundingClientRect();
+            
+            const startX = fromRect.left + fromRect.width/2 - containerRect.left;
+            const startY = fromRect.top + fromRect.height/2 - containerRect.top;
+            const endX = toRect.left + toRect.width/2 - containerRect.left;
+            const endY = toRect.top + toRect.height/2 - containerRect.top;
+            
+            // 创建数据流线
+            const flow = document.createElement('div');
+            flow.className = 'data-flow';
+            
+            const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+            const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI;
+            
+            flow.style.left = startX + 'px';
+            flow.style.top = startY + 'px';
+            flow.style.width = length + 'px';
+            flow.style.transformOrigin = '0 50%';
+            flow.style.transform = `rotate(${angle}deg)`;
+            
+            document.getElementById('clusterViz').appendChild(flow);
+            
+            // 激活动画
+            setTimeout(() => {
+                flow.classList.add('active');
+            }, 50);
+            
+            // 创建移动的数据包
+            const packet = document.createElement('div');
+            packet.className = 'data-packet';
+            packet.style.left = startX + 'px';
+            packet.style.top = startY + 'px';
+            
+            document.getElementById('clusterViz').appendChild(packet);
+            
+            setTimeout(() => {
+                packet.classList.add('moving');
+                packet.style.left = endX + 'px';
+                packet.style.top = endY + 'px';
+                packet.style.transition = `all ${2000 / animationState.speed}ms ease-in-out`;
+            }, 100);
+            
+            // 清理元素
+            setTimeout(() => {
+                if (flow.parentNode) flow.parentNode.removeChild(flow);
+                if (packet.parentNode) packet.parentNode.removeChild(packet);
+            }, 3000 / animationState.speed);
+        }
+
+        function createDataFlowToExpert(fromNodeId, expertId) {
+            createDataFlow(fromNodeId, expertId);
+        }
+
+        function createDataFlowFromExpert(expertId, toNodeId) {
+            createDataFlow(expertId, toNodeId);
+        }
+
+        function highlightExpert(expertIndex) {
+            const expert = document.getElementById(`expert-${expertIndex}`);
+            if (expert) {
+                expert.classList.add('active');
+                expert.style.transform = 'scale(1.1)';
+                expert.style.boxShadow = '0 0 20px rgba(66, 153, 225, 0.8)';
+            }
+        }
+
+        function unhighlightExpert(expertIndex) {
+            const expert = document.getElementById(`expert-${expertIndex}`);
+            if (expert) {
+                expert.classList.remove('active');
+                expert.style.transform = '';
+                expert.style.boxShadow = '';
+            }
+        }
+
+        function updateExplanation(step, title, text) {
+            document.getElementById('stepIndicator').textContent = step;
+            document.getElementById('explanationTitle').textContent = title;
+            document.getElementById('explanationText').textContent = text;
+        }
+
+        function updateMetrics() {
+            document.getElementById('currentBatch').textContent = animationState.currentBatch;
+            document.getElementById('computeLoad').textContent = Math.floor(Math.random() * 30 + 70) + '%';
+            document.getElementById('commOverhead').textContent = Math.floor(Math.random() * 50 + 10) + 'ms';
+        }
+
+        function updateActiveExperts(count = 0) {
+            document.getElementById('activeExperts').textContent = `${count}/${animationState.expertCount}`;
+        }
+
+        function clearAllIntervals() {
+            animationIntervals.forEach(interval => clearInterval(interval));
+            animationIntervals = [];
+            if (currentStepTimeout) {
+                clearTimeout(currentStepTimeout);
+                currentStepTimeout = null;
+            }
+        }
+
+        function clearAllAnimations() {
+            // 清除所有数据流和数据包
+            const flows = document.querySelectorAll('.data-flow');
+            const packets = document.querySelectorAll('.data-packet');
+            
+            flows.forEach(flow => {
+                if (flow.parentNode) flow.parentNode.removeChild(flow);
+            });
+            
+            packets.forEach(packet => {
+                if (packet.parentNode) packet.parentNode.removeChild(packet);
+            });
+            
+            // 清除专家高亮
+            for (let i = 0; i < animationState.expertCount; i++) {
+                unhighlightExpert(i);
+                deactivateLoader(`expertLoader-${i}`);
+            }
+            
+            // 清除所有加载指示器
+            deactivateLoader('inputLoader');
+            deactivateLoader('routerLoader');
+            deactivateLoader('aggLoader');
+            deactivateLoader('outputLoader');
+        }
+
+        function resumeCurrentStep() {
+            if (animationState.currentStep > 0) {
+                showStep(animationState.currentStep);
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeExperts();
+            updateMetrics();
+        });
+    </script>
+</body>
+</html>
